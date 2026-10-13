@@ -37,8 +37,8 @@ async function startScan(){
  try{
   const engine=await ensureDecoder();
   if(engine==='native'){await nativeStart();return}
-  qr=qr||new Html5Qrcode('reader');
-  await qr.start({facingMode:'environment'},{fps:15,aspectRatio:1.777778,disableFlip:false},onDecode,()=>{});
+  qr=qr||new Html5Qrcode('reader',{formatsToSupport:[Html5QrcodeSupportedFormats.QR_CODE],useBarCodeDetectorIfSupported:true,verbose:false});
+  await qr.start({facingMode:'environment'},{fps:12,disableFlip:false,videoConstraints:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}},onDecode,()=>{});
   running=true;$('start').style.display='none';$('stop').style.display='block';
   $('scanStatus').textContent='دوربین فعال شد؛ QR کوچک روی شیشه را نزدیک دوربین و کاملاً در فوکوس نگه دارید؛ نور و انعکاس را کم کنید.';
  }catch(e){$('scanStatus').textContent='خطای اسکن: '+(e.message||e)+'. اجازه دوربین و HTTPS را بررسی کنید.'}
