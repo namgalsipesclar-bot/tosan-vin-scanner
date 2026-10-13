@@ -3,7 +3,7 @@
 'use strict';
 // Configured for the existing Tosan Google Form VIN entry. TESTVIN is a prefill placeholder, not the question title.
 const DEFAULT_PREFILL_URL='https://docs.google.com/forms/d/e/1FAIpQLSc_hhyiqPbp0rDypJY87zQMgsHbGHJpneX4TfA5GrDSGjzySw/viewform?usp=pp_url&entry.215278718=TESTVIN';
-const $=id=>document.getElementById(id);let qr=null,running=false,videoStream=null,nativeTimer=null,loading=null;
+const $=id=>document.getElementById(id);let qr=null,running=false,videoStream=null,nativeTimer=null,loading=null,backupTimer=null,backupBusy=false;
 function loadScript(url){return new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=url;s.onload=resolve;s.onerror=reject;document.head.appendChild(s)})}
 async function ensureDecoder(){
  if('BarcodeDetector' in window){try{const f=await BarcodeDetector.getSupportedFormats();if(f.includes('qr_code'))return 'native'}catch(e){}}
@@ -17,6 +17,10 @@ async function ensureDecoder(){
  ]){try{await loadScript(u);if(window.Html5Qrcode)return 'html5'}catch(e){}}throw Error('کتابخانه اسکنر حتی از فایل محلی بارگذاری نشد؛ لطفاً آدرس سایت را دوباره باز کنید.')})();
  try{return await loading}catch(e){loading=null;throw e}
 }
+async function loadBackup(){if(window.jsQR)return;await loadScript('./jsQR.js');if(!window.jsQR)throw Error('موتور دوم بارگذاری نشد')}
+function decodeCanvas(canvas){const ctx=canvas.getContext('2d',{willReadFrequently:true});const im=ctx.getImageData(0,0,canvas.width,canvas.height);const result=window.jsQR(im.data,im.width,im.height,{inversionAttempts:'attemptBoth'});return result&&result.data}
+async function backupPhoto(file){await loadBackup();const bmp=await createImageBitmap(file);try{const regions=[[0,0,1,1],[.45,.2,.55,.6],[.6,.2,.4,.5],[.2,.15,.6,.7],[0,0,.5,.5],[.5,0,.5,.5],[0,.5,.5,.5],[.5,.5,.5,.5]];for(const [x,y,w,h] of regions){const c=document.createElement('canvas');c.width=1200;c.height=1200;const ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1200,1200);const sw=bmp.width*w,sh=bmp.height*h,k=Math.min(1160/sw,1160/sh);ctx.drawImage(bmp,bmp.width*x,bmp.height*y,sw,sh,(1200-sw*k)/2,(1200-sh*k)/2,sw*k,sh*k);const v=decodeCanvas(c);if(v)return v}throw Error('هیچ‌کدام از دو موتور نتوانستند QR را بخوانند؛ عکس نزدیک و واضح‌تر لازم است')}finally{bmp.close()}}
+function startBackupLive(){loadBackup().then(()=>{if(!running)return;backupTimer=setInterval(()=>{if(!running||backupBusy)return;const v=$('reader').querySelector('video');if(!v||v.readyState<2)return;backupBusy=true;try{const c=document.createElement('canvas');c.width=960;c.height=720;const ctx=c.getContext('2d');ctx.drawImage(v,0,0,c.width,c.height);const decoded=decodeCanvas(c);if(decoded)onDecode(decoded)}catch(e){}finally{backupBusy=false}},500)}).catch(e=>{$('scanStatus').textContent+=' | موتور دوم: '+e.message})}
 async function nativePhoto(file){const detector=new BarcodeDetector({formats:['qr_code']});const bmp=await createImageBitmap(file);try{const result=await detector.detect(bmp);if(!result.length)throw Error('QR یافت نشد');return result[0].rawValue}finally{bmp.close()}}
 async function nativeStart(){
  const video=document.createElement('video');video.setAttribute('playsinline','');video.muted=true;video.autoplay=true;video.style.width='100%';$('reader').replaceChildren(video);
@@ -45,7 +49,7 @@ async function startScan(){
  }catch(e){$('scanStatus').textContent='خطای اسکن: '+(e.message||e)+'. اجازه دوربین و HTTPS را بررسی کنید.'}
 }
 async function stopScan(){
- running=false;
+ running=false;if(backupTimer){clearInterval(backupTimer);backupTimer=null}
  if(nativeTimer){clearInterval(nativeTimer);nativeTimer=null}
  if(videoStream){videoStream.getTracks().forEach(t=>t.stop());videoStream=null;$('reader').replaceChildren()}
  if(qr){try{await qr.stop()}catch(e){}}
@@ -83,7 +87,7 @@ $('photo').onchange=async e=>{
    }
   }
   onDecode(raw)
- }catch(err){$('scanStatus').textContent='خطای خواندن تصویر: '+(err.message||err)+'. تصویر واضح‌تر یا QR دیگری امتحان کنید.'}
+ }catch(err){try{onDecode(await backupPhoto(f))}catch(other){$('scanStatus').textContent='خطای خواندن تصویر: '+other.message+'. عکس نزدیک‌تر از خود QR بگیرید.'}}
  finally{e.target.value=''}
 };
 $('vin').oninput=()=>showVin(normalize($('vin').value));
