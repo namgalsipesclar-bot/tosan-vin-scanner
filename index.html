@@ -7,12 +7,13 @@ const $=id=>document.getElementById(id);let qr=null,running=false,videoStream=nu
 function loadScript(url){return new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=url;s.onload=resolve;s.onerror=reject;document.head.appendChild(s)})}
 async function ensureDecoder(){
  if(window.Html5Qrcode)return 'html5';
- if('BarcodeDetector' in window){try{const formats=await BarcodeDetector.getSupportedFormats();if(formats.includes('qr_code'))return 'native'}catch(e){}}
+ // Prefer locally hosted decoder for consistent camera and photo scanning on iPhone and Android.
  if(!loading)loading=(async()=>{for(const u of [
+ './html5-qrcode.min.js',
  'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js',
  'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js',
  'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
- ]){try{await loadScript(u);if(window.Html5Qrcode)return 'html5'}catch(e){}}throw Error('کتابخانه QR بارگذاری نشد؛ احتمالاً دسترسی به CDN در شبکه شما مسدود است.')})();
+ ]){try{await loadScript(u);if(window.Html5Qrcode)return 'html5'}catch(e){}}throw Error('کتابخانه اسکنر حتی از فایل محلی بارگذاری نشد؛ لطفاً آدرس سایت را دوباره باز کنید.')})();
  try{return await loading}catch(e){loading=null;throw e}
 }
 async function nativePhoto(file){const detector=new BarcodeDetector({formats:['qr_code']});const bmp=await createImageBitmap(file);try{const result=await detector.detect(bmp);if(!result.length)throw Error('QR یافت نشد');return result[0].rawValue}finally{bmp.close()}}
@@ -30,7 +31,7 @@ function normalize(s){return String(s||'').toUpperCase().replace(/[\u200c\u200f\
 function getVin(raw){const t=normalize(raw);const candidates=t.match(/[A-HJ-NPR-Z0-9]{17}/g)||[];const unique=[...new Set(candidates)];if(unique.length===1)return unique[0];if(unique.length>1)throw Error('چند شماره ۱۷ کاراکتری پیدا شد؛ VIN را دستی تأیید کنید.');throw Error('VIN معتبر ۱۷ کاراکتری در QR یافت نشد؛ متن کد را بررسی کنید.');}
 function valid(v){return /^[A-HJ-NPR-Z0-9]{17}$/.test(v)}
 function showVin(v){$('vin').value=v;$('vinStatus').textContent=valid(v)?'✓ قالب ۱۷ کاراکتری VIN تأیید شد.':'شماره شاسی باید دقیقاً ۱۷ کاراکتر و بدون I/O/Q باشد.'}
-function onDecode(raw){try{showVin(getVin(raw));$('scanStatus').textContent='✓ کد خوانده شد. VIN را با برچسب خودرو تطبیق دهید.';stopScan()}catch(e){$('scanStatus').textContent=e.message}}
+function onDecode(raw){try{showVin(getVin(raw));$('scanStatus').textContent='✓ کد خوانده شد. VIN را با برچسب خودرو تطبیق دهید.';stopScan()}catch(e){$('scanStatus').textContent=e.message+' | متن QR: '+String(raw).slice(0,180)}}
 async function startScan(){
  $('scanStatus').textContent='در حال آماده‌سازی اسکنر...';
  try{
