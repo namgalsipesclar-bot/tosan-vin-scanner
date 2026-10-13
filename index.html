@@ -39,7 +39,7 @@ async function startScan(){
   const engine=await ensureDecoder();
   if(engine==='native'){await nativeStart();return}
   qr=qr||new Html5Qrcode('reader',{formatsToSupport:[Html5QrcodeSupportedFormats.QR_CODE],useBarCodeDetectorIfSupported:true,verbose:false});
-  await qr.start({facingMode:'environment'},{fps:12,disableFlip:false,videoConstraints:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}},onDecode,()=>{});
+  await qr.start({facingMode:'environment'},{fps:10,qrbox:(w,h)=>{const edge=Math.min(w,h);return {width:Math.floor(edge*.92),height:Math.floor(edge*.92)}},videoConstraints:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}},onDecode,()=>{});
   running=true;$('start').style.display='none';$('stop').style.display='block';
   $('scanStatus').textContent='دوربین فعال شد؛ QR کوچک روی شیشه را نزدیک دوربین و کاملاً در فوکوس نگه دارید؛ نور و انعکاس را کم کنید.';
  }catch(e){$('scanStatus').textContent='خطای اسکن: '+(e.message||e)+'. اجازه دوربین و HTTPS را بررسی کنید.'}
@@ -60,7 +60,28 @@ $('photo').onchange=async e=>{
   const engine=await ensureDecoder();
   let raw;
   if(engine==='native'){try{raw=await nativePhoto(f)}catch(e){await loadScript('./html5-qrcode.min.js');qr=qr||new Html5Qrcode('reader',{formatsToSupport:[Html5QrcodeSupportedFormats.QR_CODE]});raw=await qr.scanFile(f,false)}}
-  else {qr=qr||new Html5Qrcode('reader');try{raw=await qr.scanFile(f,true)}catch(first){raw=await qr.scanFile(f,false)}}
+  else {
+   qr=qr||new Html5Qrcode('reader',{formatsToSupport:[Html5QrcodeSupportedFormats.QR_CODE],useBarCodeDetectorIfSupported:false});
+   try{raw=await qr.scanFile(f,false)}
+   catch(first){
+    const bmp=await createImageBitmap(f);
+    try{
+     const crops=[[0,0,1,1],[.5,.2,.5,.5],[.6,.25,.4,.45],[.25,.15,.6,.7],[0,0,.5,.5],[.5,0,.5,.5],[0,.5,.5,.5],[.5,.5,.5,.5]];
+     let decoded=false;
+     for(const [x,y,w,h] of crops){
+      const canvas=document.createElement('canvas');canvas.width=1200;canvas.height=1200;
+      const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,1200,1200);
+      const sx=Math.floor(x*bmp.width),sy=Math.floor(y*bmp.height),sw=Math.floor(w*bmp.width),sh=Math.floor(h*bmp.height);
+      const scale=Math.min(1100/sw,1100/sh),dw=sw*scale,dh=sh*scale;
+      ctx.drawImage(bmp,sx,sy,sw,sh,(1200-dw)/2,(1200-dh)/2,dw,dh);
+      const blob=await new Promise(ok=>canvas.toBlob(ok,'image/png'));
+      if(!blob)continue;
+      try{raw=await qr.scanFile(new File([blob],'crop.png',{type:'image/png'}),false);decoded=true;break}catch(e){}
+     }
+     if(!decoded)throw first;
+    }finally{bmp.close()}
+   }
+  }
   onDecode(raw)
  }catch(err){$('scanStatus').textContent='خطای خواندن تصویر: '+(err.message||err)+'. تصویر واضح‌تر یا QR دیگری امتحان کنید.'}
  finally{e.target.value=''}
