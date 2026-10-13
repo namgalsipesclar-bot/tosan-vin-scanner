@@ -72,16 +72,53 @@ function onDecode(raw){try{showVin(getVin(raw));$('scanStatus').textContent='✓
 async function initZoom(){const v=$('reader').querySelector('video');const track=videoStream?.getVideoTracks()[0]||v?.srcObject?.getVideoTracks?.()[0];activeTrack=track||null;$('zoomPanel').style.display='none';if(!track||!track.getCapabilities)return;try{const caps=track.getCapabilities();if(caps.zoom&&caps.zoom.max>caps.zoom.min){$('zoom').min=caps.zoom.min;$('zoom').max=caps.zoom.max;$('zoom').step=caps.zoom.step||.1;$('zoom').value=track.getSettings().zoom||caps.zoom.min;$('zoomValue').textContent=Number($('zoom').value).toFixed(1)+'×';$('zoomPanel').style.display='block'}}catch(e){}}
 $('zoom').oninput=async()=>{if(!activeTrack)return;const z=Number($('zoom').value);$('zoomValue').textContent=z.toFixed(1)+'×';try{await activeTrack.applyConstraints({advanced:[{zoom:z}]})}catch(e){$('scanStatus').textContent='زوم سخت‌افزاری در این دوربین در دسترس نیست: '+e.message}};
 async function startScan(){
- $('scanStatus').textContent='در حال آماده‌سازی اسکنر...';
+ $('scanStatus').textContent='در حال آماده‌سازی دوربین...';
+ if(!navigator.mediaDevices?.getUserMedia){$('scanStatus').textContent='مرورگر دسترسی به دوربین وب را پشتیبانی نمی‌کند. صفحه را مستقیم در Chrome یا Safari باز کنید.';return}
  try{
-  const engine=await ensureDecoder();
-  if(engine==='native'){try{await nativeStart();await initZoom();startBackupLive();return}catch(nativeError){$('reader').replaceChildren();if(videoStream){videoStream.getTracks().forEach(t=>t.stop());videoStream=null}running=false;$('scanStatus').textContent='دوربین داخلی باز نشد؛ تلاش با موتور جایگزین: '+nativeError.name;}}
-  qr=qr||new Html5Qrcode('reader',{formatsToSupport:[Html5QrcodeSupportedFormats.QR_CODE],useBarCodeDetectorIfSupported:true,verbose:false});
-  try{await qr.start({facingMode:'environment'},{fps:10,videoConstraints:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}},onDecode,()=>{})}
-  catch(highResError){await qr.start({facingMode:'environment'},{fps:10},onDecode,()=>{})}
-  running=true;$('start').style.display='none';$('stop').style.display='block';await initZoom();startBackupLive();
-  $('scanStatus').textContent='دوربین فعال شد؛ QR کوچک روی شیشه را نزدیک دوربین و کاملاً در فوکوس نگه دارید؛ نور و انعکاس را کم کنید.';
- }catch(e){$('scanStatus').textContent='خطای واقعی دوربین: '+(e.name||'Error')+' — '+(e.message||e)+'. در Chrome یا Samsung Internet مجوز Camera سایت را بررسی کنید.'}
+  // Android/Samsung: request camera directly before loading a QR library.
+  // Avoid conflicting camera constraints and use the same camera stream for scanning.
+  const constraints=[
+   {video:{facingMode:{ideal:'environment'}},audio:false},
+   {video:true,audio:false}
+  ];
+  let lastError=null;
+  for(const constraint of constraints){
+   try{videoStream=await navigator.mediaDevices.getUserMedia(constraint);break}
+   catch(e){lastError=e}
+  }
+  if(!videoStream)throw lastError||Error('Camera unavailable');
+  const video=document.createElement('video');
+  video.setAttribute('playsinline','');video.muted=true;video.autoplay=true;
+  video.style.width='100%';
+  $('reader').replaceChildren(video);
+  video.srcObject=video;
+  await video.play();
+  running=true;
+  $('start').style.display='none';$('stop').style.display='block';
+  await initZoom();
+  // Both engines decode from the video stream, without opening the camera twice.
+  let nativeStarted=false;
+  if('BarcodeDetector' in window){
+   try{
+    const formats=await BarcodeDetector.getSupportedFormats();
+    if(formats.includes('qr_code')){
+     const detector=new BarcodeDetector({formats:['qr_code']});
+     nativeTimer=setInterval(async()=>{
+      if(!running||video.readyState<2)return;
+      try{const codes=await detector.detect(video);if(codes.length)onDecode(codes[0].rawValue)}catch(e){}
+     },350);
+     nativeStarted=true;
+    }
+   }catch(e){}
+  }
+  startBackupLive();
+  $('scanStatus').textContent='دوربین باز شد. زوم را تنظیم کنید و QR را وسط تصویر نگه دارید.'+(nativeStarted?' موتور داخلی فعال است.':' موتور جایگزین فعال است.');
+ }catch(e){
+  running=false;
+  if(videoStream){videoStream.getTracks().forEach(t=>t.stop());videoStream=null}
+  $('reader').replaceChildren();
+  $('scanStatus').textContent='خطای دوربین '+(e.name||'Error')+': '+(e.message||String(e))+' | اگر NotAllowedError است، مجوز دوربین را در تنظیمات سایت فعال کنید.';
+ }
 }
 async function stopScan(){
  running=false;activeTrack=null;$('zoomPanel').style.display='none';if(backupTimer){clearInterval(backupTimer);backupTimer=null}
