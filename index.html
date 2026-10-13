@@ -38,9 +38,9 @@ async function startScan(){
   const engine=await ensureDecoder();
   if(engine==='native'){await nativeStart();return}
   qr=qr||new Html5Qrcode('reader');
-  await qr.start({facingMode:'environment'},{fps:10,qrbox:{width:230,height:230}},onDecode,()=>{});
+  await qr.start({facingMode:'environment'},{fps:15,aspectRatio:1.777778,disableFlip:false},onDecode,()=>{});
   running=true;$('start').style.display='none';$('stop').style.display='block';
-  $('scanStatus').textContent='دوربین فعال شد؛ QR را مقابل آن قرار دهید.';
+  $('scanStatus').textContent='دوربین فعال شد؛ QR کوچک روی شیشه را نزدیک دوربین و کاملاً در فوکوس نگه دارید؛ نور و انعکاس را کم کنید.';
  }catch(e){$('scanStatus').textContent='خطای اسکن: '+(e.message||e)+'. اجازه دوربین و HTTPS را بررسی کنید.'}
 }
 async function stopScan(){
@@ -59,7 +59,7 @@ $('photo').onchange=async e=>{
   const engine=await ensureDecoder();
   let raw;
   if(engine==='native')raw=await nativePhoto(f);
-  else {qr=qr||new Html5Qrcode('reader');raw=await qr.scanFile(f,true)}
+  else {qr=qr||new Html5Qrcode('reader');try{raw=await qr.scanFile(f,true)}catch(first){raw=await qr.scanFile(f,false)}}
   onDecode(raw)
  }catch(err){$('scanStatus').textContent='خطای خواندن تصویر: '+(err.message||err)+'. تصویر واضح‌تر یا QR دیگری امتحان کنید.'}
  finally{e.target.value=''}
